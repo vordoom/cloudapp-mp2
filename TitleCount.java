@@ -19,8 +19,10 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.StringTokenizer;
+import java.util.regex.Pattern;
 
 // >>> Don't Change
 public class TitleCount extends Configured implements Tool {
@@ -66,7 +68,7 @@ public class TitleCount extends Configured implements Tool {
 // <<< Don't Change
 
     public static class TitleCountMap extends Mapper<Object, Text, Text, IntWritable> {
-        List<String> stopWords;
+        HashSet<String> stopWords;
         String delimiters;
 
         @Override
@@ -77,21 +79,47 @@ public class TitleCount extends Configured implements Tool {
             String stopWordsPath = conf.get("stopwords");
             String delimitersPath = conf.get("delimiters");
 
-            this.stopWords = Arrays.asList(readHDFSFile(stopWordsPath, conf).split("\n"));
-            this.delimiters = readHDFSFile(delimitersPath, conf);
+            this.stopWords = new HashSet<>(Arrays.asList(readHDFSFile(stopWordsPath, conf).split("\n")));
+            this.delimiters = getRegexDelimiters(readHDFSFile(delimitersPath, conf));
         }
 
+        private String getRegexDelimiters(String value){
+            StringBuilder regexp = new StringBuilder("");
+            regexp.append("[");
+
+            for (int i = 0; i < value.length(); i++) {
+                regexp.append(Pattern.quote(
+                        Character.toString(value.charAt(i))
+                ));
+            }
+            regexp.append("]");
+
+            return regexp.toString();
+        }
 
         @Override
         public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
-            // TODO
+            String line = value.toString().toLowerCase().trim();
+            String[] result = line.split(this.delimiters);
+
+            for(String s : result) {
+                if (s == null || stopWords.contains(s) || s.length() == 0)
+                    continue;
+
+                context.write(new Text(s), new IntWritable(1));
+            }
         }
     }
 
     public static class TitleCountReduce extends Reducer<Text, IntWritable, Text, IntWritable> {
         @Override
         public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
-            // TODO
+            int total = 0;
+
+            for (IntWritable val : values)
+                total += val.get();
+
+            context.write(key, new IntWritable(total));
         }
     }
 }
