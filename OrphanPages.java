@@ -29,7 +29,7 @@ public class OrphanPages extends Configured implements Tool {
 
     @Override
     public int run(String[] args) throws Exception {
-        Job job = Job.getInstance(this.getConf(), "Title Count");
+        Job job = Job.getInstance(this.getConf(), "Orphan Pages");
 
         job.setMapOutputKeyClass(IntWritable.class);
         job.setMapOutputValueClass(IntWritable.class);
@@ -74,7 +74,7 @@ public class OrphanPages extends Configured implements Tool {
             String line = value.toString().toLowerCase().trim();
             String[] result = line.split(this.delimiters);
 
-            for(int i =0; i < result.length; i++) {
+            for (int i = 0; i < result.length; i++) {
                 if (result[i] == null || result[i].length() == 0)
                     continue;
 
