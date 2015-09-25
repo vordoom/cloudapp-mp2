@@ -74,11 +74,14 @@ public class OrphanPages extends Configured implements Tool {
             String line = value.toString().toLowerCase().trim();
             String[] result = line.split(this.delimiters);
 
-            for(String s : result) {
-                if (s == null || s.length() == 0)
+            for(int i =0; i < result.length; i++) {
+                if (result[i] == null || result[i].length() == 0)
                     continue;
 
-                context.write(new IntWritable(Integer.parseInt(s)), new IntWritable(1));
+                if (i == 0)
+                    context.write(new IntWritable(Integer.parseInt(result[i])), new IntWritable(0));
+                else
+                    context.write(new IntWritable(Integer.parseInt(result[i])), new IntWritable(1));
             }
         }
     }
@@ -91,7 +94,7 @@ public class OrphanPages extends Configured implements Tool {
             for (IntWritable val : values)
                 total += val.get();
 
-            if (total <= 1)
+            if (total == 0)
                 context.write(key, NullWritable.get());
         }
     }
