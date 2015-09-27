@@ -68,10 +68,10 @@ public class PopularityLeague extends Configured implements Tool {
         fs.delete(tmpPath, true);
 
         // Job A --------------------
-        Job jobA = Job.getInstance(conf, "Links Count");
+        Job jobA = Job.getInstance(conf, "Popularity Links Count");
 
-        jobA.setMapperClass(LinkCountMap.class);
-        jobA.setReducerClass(LinkCountReduce.class);
+        jobA.setMapperClass(PopularityLinkCountMap.class);
+        jobA.setReducerClass(PopularityLinkCountReduce.class);
 
         jobA.setMapOutputKeyClass(IntWritable.class);
         jobA.setMapOutputValueClass(IntWritable.class);
@@ -85,7 +85,7 @@ public class PopularityLeague extends Configured implements Tool {
         jobA.waitForCompletion(true);
 
         // Job B --------------------
-        Job jobB = Job.getInstance(conf, "Top Links");
+        Job jobB = Job.getInstance(conf, "Popularity League");
 
         jobB.setMapperClass(PopularLinksMap.class);
         jobB.setReducerClass(PopularLinksReduce.class);
@@ -107,7 +107,7 @@ public class PopularityLeague extends Configured implements Tool {
         return jobB.waitForCompletion(true) ? 0 : 1;
     }
 
-    public static class LinkCountMap extends Mapper<Object, Text, IntWritable, IntWritable> {
+    public static class PopularityLinkCountMap extends Mapper<Object, Text, IntWritable, IntWritable> {
         String delimiters;
         List<Integer> leagueItems;
 
@@ -159,7 +159,7 @@ public class PopularityLeague extends Configured implements Tool {
         }
     }
 
-    public static class LinkCountReduce extends Reducer<IntWritable, IntWritable, IntWritable, IntWritable> {
+    public static class PopularityLinkCountReduce extends Reducer<IntWritable, IntWritable, IntWritable, IntWritable> {
         @Override
         public void reduce(IntWritable key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
             int total = 0;
