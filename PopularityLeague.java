@@ -21,6 +21,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.*;
+import java.util.regex.Pattern;
 
 public class PopularityLeague extends Configured implements Tool {
 
@@ -29,10 +30,249 @@ public class PopularityLeague extends Configured implements Tool {
         System.exit(res);
     }
 
-    @Override
-    public int run(String[] args) throws Exception {
-        // TODO
+    public static class IntArrayWritable extends ArrayWritable {
+        public IntArrayWritable() {
+            super(IntWritable.class);
+        }
+
+        public IntArrayWritable(Integer[] numbers) {
+            super(IntWritable.class);
+            IntWritable[] ints = new IntWritable[numbers.length];
+            for (int i = 0; i < numbers.length; i++) {
+                ints[i] = new IntWritable(numbers[i]);
+            }
+            set(ints);
+        }
     }
 
-    // TODO
+    public static String readHDFSFile(String path, Configuration conf) throws IOException{
+        Path pt=new Path(path);
+        FileSystem fs = FileSystem.get(pt.toUri(), conf);
+        FSDataInputStream file = fs.open(pt);
+        BufferedReader buffIn=new BufferedReader(new InputStreamReader(file));
+
+        StringBuilder everything = new StringBuilder();
+        String line;
+        while( (line = buffIn.readLine()) != null) {
+            everything.append(line);
+            everything.append("\n");
+        }
+        return everything.toString();
+    }
+
+    @Override
+    public int run(String[] args) throws Exception {
+        Configuration conf = this.getConf();
+        FileSystem fs = FileSystem.get(conf);
+        Path tmpPath = new Path("/mp2/tmp");
+        fs.delete(tmpPath, true);
+
+        // Job A --------------------
+        Job jobA = Job.getInstance(conf, "Links Count");
+
+        jobA.setMapperClass(LinkCountMap.class);
+        jobA.setReducerClass(LinkCountReduce.class);
+
+        jobA.setMapOutputKeyClass(IntWritable.class);
+        jobA.setMapOutputValueClass(IntWritable.class);
+        jobA.setOutputKeyClass(IntWritable.class);
+        jobA.setOutputValueClass(IntWritable.class);
+
+        FileInputFormat.setInputPaths(jobA, new Path(args[0]));
+        FileOutputFormat.setOutputPath(jobA, tmpPath);
+
+        jobA.setJarByClass(TopPopularLinks.class);
+        jobA.waitForCompletion(true);
+
+        // Job B --------------------
+        Job jobB = Job.getInstance(conf, "Top Links");
+
+        jobB.setMapperClass(PopularLinksMap.class);
+        jobB.setReducerClass(PopularLinksReduce.class);
+
+        jobB.setMapOutputKeyClass(NullWritable.class);
+        jobB.setMapOutputValueClass(IntArrayWritable.class);
+        jobB.setOutputKeyClass(IntWritable.class);
+        jobB.setOutputValueClass(IntWritable.class);
+
+        jobB.setNumReduceTasks(1);
+
+        FileInputFormat.setInputPaths(jobB, tmpPath);
+        FileOutputFormat.setOutputPath(jobB, new Path(args[1]));
+
+        jobB.setInputFormatClass(KeyValueTextInputFormat.class);
+        jobB.setOutputFormatClass(TextOutputFormat.class);
+
+        jobB.setJarByClass(TopPopularLinks.class);
+        return jobB.waitForCompletion(true) ? 0 : 1;
+    }
+
+    public static class LinkCountMap extends Mapper<Object, Text, IntWritable, IntWritable> {
+        String delimiters;
+        List<Integer> leagueItems;
+
+        @Override
+        protected void setup(Context context) throws IOException,InterruptedException {
+            Configuration conf = context.getConfiguration();
+            this.delimiters = getRegexDelimiters(" \t,;:.?!-:@[](){}_*/");
+
+            String[] lines = readHDFSFile(conf.get("league"), conf).split("\n");
+
+            this.leagueItems = new ArrayList<>();
+            for (String s : lines)
+                this.leagueItems.add(Integer.parseInt(s));
+        }
+
+        private String getRegexDelimiters(String value){
+            StringBuilder regexp = new StringBuilder("");
+            regexp.append("[");
+
+            for (int i = 0; i < value.length(); i++) {
+                regexp.append(Pattern.quote(
+                        Character.toString(value.charAt(i))
+                ));
+            }
+            regexp.append("]");
+
+            return regexp.toString();
+        }
+
+        @Override
+        public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+            String line = value.toString().toLowerCase().trim();
+            String[] result = line.split(this.delimiters);
+
+            for (int i = 0; i < result.length; i++) {
+                if (result[i] == null || result[i].length() == 0)
+                    continue;
+
+                Integer val = Integer.parseInt(result[i]);
+
+                if(this.leagueItems.contains(val) == false)
+                    continue;
+
+                if (i == 0)
+                    context.write(new IntWritable(val), new IntWritable(0));
+                else
+                    context.write(new IntWritable(val), new IntWritable(1));
+            }
+        }
+    }
+
+    public static class LinkCountReduce extends Reducer<IntWritable, IntWritable, IntWritable, IntWritable> {
+        @Override
+        public void reduce(IntWritable key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
+            int total = 0;
+
+            for (IntWritable val : values)
+                total += val.get();
+
+            context.write(key, new IntWritable(total));
+        }
+    }
+
+    public static class PopularLinksMap extends Mapper<Text, Text, NullWritable, IntArrayWritable> {
+        TreeSet<Pair<Integer, Integer>> countToLinkMap = new TreeSet<>();
+
+        @Override
+        public void map(Text key, Text value, Context context) throws IOException, InterruptedException {
+            Integer count = Integer.parseInt(value.toString());
+            Integer link = Integer.parseInt(key.toString());
+
+            countToLinkMap.add(new Pair<>(count, link));
+        }
+
+        @Override
+        protected void cleanup(Context context) throws IOException, InterruptedException {
+            for (Pair<Integer, Integer> item : countToLinkMap) {
+                Integer[] ints = {item.second, item.first};
+                IntArrayWritable val = new IntArrayWritable(ints);
+                context.write(NullWritable.get(), val);
+            }
+        }
+    }
+
+    public static class PopularLinksReduce extends Reducer<NullWritable, IntArrayWritable, IntWritable, IntWritable> {
+        @Override
+        public void reduce(NullWritable key, Iterable<IntArrayWritable> values, Context context) throws IOException, InterruptedException {
+            TreeSet<Pair<Integer, Integer>> countToLinkMap = new TreeSet<>();
+
+            for (IntArrayWritable val : values) {
+                IntWritable[] pair = (IntWritable[]) val.toArray();
+                Integer link = pair[0].get();
+                Integer count = pair[1].get();
+
+                countToLinkMap.add(new Pair<>(count, link));
+            }
+
+            Integer rank = -1;
+            Integer prev = -1;
+
+            for (Pair<Integer, Integer> item : countToLinkMap) {
+                Integer link = item.second;
+                Integer value = item.first;
+
+                if(value > prev)
+                    rank++;
+
+                context.write(new IntWritable(link), new IntWritable(rank));
+
+                prev = value;
+            }
+        }
+    }
+}
+
+
+class Pair<A extends Comparable<? super A>,
+        B extends Comparable<? super B>>
+        implements Comparable<Pair<A, B>> {
+
+    public final A first;
+    public final B second;
+
+    public Pair(A first, B second) {
+        this.first = first;
+        this.second = second;
+    }
+
+    public static <A extends Comparable<? super A>,
+            B extends Comparable<? super B>>
+    Pair<A, B> of(A first, B second) {
+        return new Pair<A, B>(first, second);
+    }
+
+    @Override
+    public int compareTo(Pair<A, B> o) {
+        int cmp = o == null ? 1 : (this.first).compareTo(o.first);
+        return cmp == 0 ? (this.second).compareTo(o.second) : cmp;
+    }
+
+    @Override
+    public int hashCode() {
+        return 31 * hashcode(first) + hashcode(second);
+    }
+
+    private static int hashcode(Object o) {
+        return o == null ? 0 : o.hashCode();
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (!(obj instanceof Pair))
+            return false;
+        if (this == obj)
+            return true;
+        return equal(first, ((Pair<?, ?>) obj).first)
+                && equal(second, ((Pair<?, ?>) obj).second);
+    }
+
+    private boolean equal(Object o1, Object o2) {
+        return o1 == o2 || (o1 != null && o1.equals(o2));
+    }
+
+    @Override
+    public String toString() {
+        return "(" + first + ", " + second + ')';
+    }
 }
