@@ -81,7 +81,7 @@ public class PopularityLeague extends Configured implements Tool {
         FileInputFormat.setInputPaths(jobA, new Path(args[0]));
         FileOutputFormat.setOutputPath(jobA, tmpPath);
 
-        jobA.setJarByClass(TopPopularLinks.class);
+        jobA.setJarByClass(PopularityLeague.class);
         jobA.waitForCompletion(true);
 
         // Job B --------------------
@@ -103,7 +103,7 @@ public class PopularityLeague extends Configured implements Tool {
         jobB.setInputFormatClass(KeyValueTextInputFormat.class);
         jobB.setOutputFormatClass(TextOutputFormat.class);
 
-        jobB.setJarByClass(TopPopularLinks.class);
+        jobB.setJarByClass(PopularityLeague.class);
         return jobB.waitForCompletion(true) ? 0 : 1;
     }
 
